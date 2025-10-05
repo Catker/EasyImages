@@ -461,7 +461,8 @@ function get_file_by_glob($dir_fileName_suffix, $type = 'list')
     // 获取所有文件
     if ($type == 'list') {
         $res = array();
-        $glob = glob($dir_fileName_suffix, GLOB_BRACE);
+        $flag = defined('GLOB_BRACE') ? GLOB_BRACE : 0;
+        $glob = glob($dir_fileName_suffix, $flag);
 
         if ($glob) {
             foreach ($glob as $v) {
