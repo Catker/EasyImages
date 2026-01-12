@@ -44,6 +44,7 @@
 				<?php endif; ?>
 				<?php /** 非管理不显示设置 */ if (is_who_login('admin')) : ?>
 					<li><a href="<?php echo $config['domain']; ?>/admin/admin.inc.php"><i class="icon icon-cogs"></i> 设置</a></li>
+					<li><a href="<?php echo $config['domain']; ?>/admin/batch_delete.php"><i class="icon icon-trash"></i> 批量删除</a></li>
 				<?php endif; ?>
 				<?php /** 非管理或未开启不显示统计 */ if ($config['chart_on'] && is_who_login('admin')) : ?>
 					<li><a href="<?php echo $config['domain']; ?>/admin/chart.php"><i class="icon icon-pie-chart"></i> 统计</a></li>

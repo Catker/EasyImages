@@ -69,6 +69,11 @@ function uploadCopy(copyID, loadClass) {
         var formData = new FormData();
         formData.append('file', file);
         formData.append('sign', new Date().getTime() / 1000 | 0);
+        // 管理员自定义上传日期
+        var targetDateEl = document.getElementById('target_date');
+        if (targetDateEl && targetDateEl.value) {
+            formData.append('target_date', targetDateEl.value);
+        }
         var xhr = new XMLHttpRequest();
         xhr.onreadystatechange = function () {
             if (xhr.readyState === 1) {

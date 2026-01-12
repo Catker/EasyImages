@@ -9,38 +9,61 @@ if ($config['ad_top']) echo $config['ad_top_info'];
 <div class="row">
   <div class="col-md-12">
     <?php
-    if (!$config['showSwitch'] && !is_who_login('admin')) : ?>
-      <div class="alert alert-info">管理员关闭了预览哦~~</div>
+    // 权限控制: 默认要求登录才能访问广场
+    if (!is_who_login('admin')) : ?>
+      <div class="alert alert-warning">
+        <i class="icon icon-lock"></i> 广场页面需要登录后才能访问
+        <a href="/admin/index.php" class="btn btn-primary btn-sm" style="margin-left: 10px;">前往登录</a>
+      </div>
       <?php exit(require_once __DIR__ . '/footer.php'); ?>
       <?php else :
-      // $path = isset($_GET['date']) ? $_GET['date'] : date('Y/m/d/');                                 // 获取指定目录
-      /* 限制GET浏览日期 有助于防止爬虫*/
-      $listDate = $config['listDate'];                                                                  // 配置限制日期
-      $path =  date('Y/m/d/');                                                                          // 当前日期
+      
+      // ========== 分页配置 ==========
+      $perPage = isset($config['plaza_per_page']) ? $config['plaza_per_page'] : 30; // 每页显示数量
+      $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;                 // 当前页码
+      
+      // ========== 日期处理 ==========
+      $listDate = $config['listDate'];                                                // 配置限制日期
+      $path =  date('Y/m/d/');                                                        // 默认当前日期
+      
       if (isset($_GET['date'])) {
-        if ($_GET['date'] < date('Y/m/d/', strtotime("- $listDate day"))) {                             // GET日期小于配置日期时返回当前日期
-          $path =  date('Y/m/d/');
+        // 验证日期格式
+        $requestDate = trim($_GET['date']);
+        if (preg_match('/^\d{4}\/\d{2}\/\d{2}\/$/', $requestDate)) {
+          $path = $requestDate;
+        } else {
+          $path = date('Y/m/d/');
           echo '
           <script>
-            new $.zui.Messager("已超出浏览页数, 返回今日上传列表", {
-            type: "info", // 定义颜色主题 
-            icon: "exclamation-sign" // 定义消息图标
+            new $.zui.Messager("日期格式不正确, 返回今日上传列表", {
+            type: "warning",
+            icon: "exclamation-sign"
             }).show();
           </script>';
-        } else {
-          $path = $_GET['date'];                                                                        // 如果不小于则返回当前GET日期
         }
       }
 
-      $path = preg_replace("/^d{4}-d{2}-d{2} d{2}:d{2}:d{2}$/s", "", trim($path));                      // 过滤非日期，删除空格
-      $keyNum = isset($_GET['num']) ? $_GET['num'] : $config['listNumber'];                             // 获取指定浏览数量
-      $keyNum = preg_replace("/[\W]/", "", trim($keyNum));                                              // 过滤非数字，删除空格
-      // $fileArr = getFile(APP_ROOT . config_path($path));                                             // 获取当日上传列表
-      $fileType = isset($_GET['search']) ? '*.' . preg_replace("/[\W]/", "", $_GET['search'])  : '*.*'; // 按照图片格式
-      $fileArr = get_file_by_glob(APP_ROOT . config_path($path) .  $fileType, 'list');                  // 获取当日上传列表
-      $allUploud = isset($_GET['date']) ? $_GET['date'] : date('Y/m/d/');
-      $allUploud = get_file_by_glob(APP_ROOT . $config['path'] . $allUploud, 'number');                 // 当前日期全部上传
-      $httpUrl = array('date' => $path, 'num' => getFileNumber(APP_ROOT . config_path($path)));         // 组合url
+      // ========== 文件类型筛选 ==========
+      $fileType = isset($_GET['search']) ? '*.' . preg_replace("/[\W]/", "", $_GET['search'])  : '*.*';
+      
+      // ========== 获取文件列表 ==========
+      $allFiles = get_file_by_glob(APP_ROOT . config_path($path) .  $fileType, 'list');
+      $totalFiles = count($allFiles);
+      
+      // ========== 分页计算 ==========
+      $totalPages = $totalFiles > 0 ? ceil($totalFiles / $perPage) : 1;
+      $page = min($page, $totalPages); // 确保页码不超过总页数
+      $offset = ($page - 1) * $perPage;
+      
+      // ========== 分页切片 ==========
+      $fileArr = array_slice($allFiles, $offset, $perPage);
+      
+      // ========== 当前日期统计 ==========
+      $currentDatePath = isset($_GET['date']) ? $_GET['date'] : date('Y/m/d/');
+      $allUploud = get_file_by_glob(APP_ROOT . $config['path'] . $currentDatePath . '*.*', 'number');
+      
+      // ========== URL 参数 ==========
+      $httpUrl = array('date' => $path, 'page' => $page);
 
       // 隐藏path目录获取图片复制与原图地址
       if ($config['hide_path']) {
@@ -49,13 +72,18 @@ if ($config['ad_top']) echo $config['ad_top_info'];
         $config_path = config_path($path);
       }
 
-      if (empty($fileArr[0])) : ?>
-        <div class="alert alert-danger">今天还没有上传的图片哟~~ <br />快来上传第一张吧~!</div>
+      if (empty($fileArr)) : ?>
+        <div class="alert alert-info">
+          <?php if ($page > 1): ?>
+            当前页没有图片,请返回 <a href="?date=<?php echo $path; ?>&page=1">第一页</a>
+          <?php else: ?>
+            <?php echo $path == date('Y/m/d/') ? '今天还没有上传的图片哟~~ <br />快来上传第一张吧~!' : '该日期没有上传的图片'; ?>
+          <?php endif; ?>
+        </div>
       <?php else : ?>
         <ul id="viewjs">
           <div class="cards listNum">
             <?php foreach ($fileArr as $key => $value) {
-              if ($key < $keyNum) {
                 $relative_path = config_path($path) . $value;     // 相对路径
                 $imgUrl = $config['domain'] . $relative_path;     // 图片地址
                 $linkUrl = rand_imgurl() . $config_path . $value; // 图片复制与原图地址
@@ -64,25 +92,28 @@ if ($config['ad_top']) echo $config['ad_top_info'];
                   <div class="card">
                     <li><img src="<?php static_cdn(); ?>/public/images/loading.svg" data-image="<?php echo creat_thumbnail_by_list($imgUrl); ?>" data-original="<?php echo $imgUrl; ?>" alt="简单图床-EasyImage"></li>
                     <div class="bottom-bar">
-                      <a href="<?php echo $linkUrl; ?>" target="_blank"><i class="icon icon-picture" data-toggle="tooltip" title="打开" style="margin-left:10px;"></i></a>
-                      <a href="#" class="copy" data-clipboard-text="<?php echo $linkUrl; ?>" data-toggle="tooltip" title="复制链接" style="margin-left:10px;"><i class="icon icon-copy"></i></a>
-                      <?php if ($config['show_exif_info'] || is_who_login('admin')) : ?>
-                        <a href="/app/info.php?img=<?php echo $relative_path; ?>" data-toggle="tooltip" title="详细信息" target="_blank" style="margin-left:10px;"><i class="icon icon-info-sign"></i></a>
-                      <?php endif; ?>
-                      <a href="/app/down.php?dw=<?php echo $relative_path; ?>" data-toggle="tooltip" title="下载文件" target="_blank" style="margin-left:10px;"><i class="icon icon-cloud-download"></i></a>
-                      <?php if (!empty($config['report'])) : ?>
-                        <a href="<?php echo $config['report'] . '?Website1=' . $linkUrl; ?>" target="_blank"><i class="icon icon-question-sign" data-toggle="tooltip" title="举报文件" style="margin-left:10px;"></i></a>
-                      <?php endif; ?>
+                      <div class="bottom-bar-actions">
+                        <a href="<?php echo $linkUrl; ?>" target="_blank"><i class="icon icon-picture" data-toggle="tooltip" title="打开"></i></a>
+                        <a href="#" class="copy" data-clipboard-text="<?php echo $linkUrl; ?>" data-toggle="tooltip" title="复制链接"><i class="icon icon-copy"></i></a>
+                        <?php if ($config['show_exif_info'] || is_who_login('admin')) : ?>
+                          <a href="/app/info.php?img=<?php echo $relative_path; ?>" data-toggle="tooltip" title="详细信息" target="_blank"><i class="icon icon-info-sign"></i></a>
+                        <?php endif; ?>
+                        <a href="/app/down.php?dw=<?php echo $relative_path; ?>" data-toggle="tooltip" title="下载文件" target="_blank"><i class="icon icon-cloud-download"></i></a>
+                        <?php if (!empty($config['report'])) : ?>
+                          <a href="<?php echo $config['report'] . '?Website1=' . $linkUrl; ?>" target="_blank"><i class="icon icon-question-sign" data-toggle="tooltip" title="举报文件"></i></a>
+                        <?php endif; ?>
+                        <?php if (is_who_login('admin')) : ?>
+                          <a href="#" onclick="ajax_post('<?php echo $relative_path; ?>','recycle')" data-toggle="tooltip" title="回收文件"><i class="icon icon-undo"></i></a>
+                          <a href="#" onclick="ajax_post('<?php echo $relative_path; ?>')" data-toggle="tooltip" title="删除文件"><i class="icon icon-trash"></i></a>
+                        <?php endif; ?>
+                      </div>
                       <?php if (is_who_login('admin')) : ?>
-                        <a href="#" onclick="ajax_post('<?php echo $relative_path; ?>','recycle')" data-toggle="tooltip" title="回收文件" style="margin-left:10px;"><i class="icon icon-undo"></i></a>
-                        <a href="#" onclick="ajax_post('<?php echo $relative_path; ?>')" data-toggle="tooltip" title="删除文件" style="margin-left:10px;"><i class="icon icon-trash"></i></a>
                         <label class="text-primary"><input type="checkbox" id="url" name="checkbox" value="<?php echo $relative_path; ?>"> 选择</label>
                       <?php endif; ?>
                     </div>
                   </div>
                 </div>
             <?php
-              }
             }
             ?>
           </div>
@@ -93,6 +124,39 @@ if ($config['ad_top']) echo $config['ad_top_info'];
     /** 底部广告 */
     if ($config['ad_bot']) echo $config['ad_bot_info']; ?>
   </div>
+  
+  <!-- 分页导航 - 独立行 -->
+  <?php if (!empty($fileArr) && $totalPages > 1): ?>
+  <div class="col-md-12" style="text-align: center; margin: 30px 0;">
+    <div class="pager">
+      <?php if ($page > 1): ?>
+        <a href="?date=<?php echo $path; ?>&page=<?php echo $page - 1; ?><?php echo isset($_GET['search']) ? '&search=' . $_GET['search'] : ''; ?>" class="btn btn-primary" style="margin: 0 5px;">
+          <i class="icon icon-chevron-left"></i> 上一页
+        </a>
+      <?php else: ?>
+        <span class="btn btn-default disabled" style="margin: 0 5px;">
+          <i class="icon icon-chevron-left"></i> 上一页
+        </span>
+      <?php endif; ?>
+      
+      <span class="btn btn-default" style="margin: 0 10px; cursor: default;">
+        第 <strong><?php echo $page; ?></strong> / <?php echo $totalPages; ?> 页 
+        (共 <strong><?php echo $totalFiles; ?></strong> 张)
+      </span>
+      
+      <?php if ($page < $totalPages): ?>
+        <a href="?date=<?php echo $path; ?>&page=<?php echo $page + 1; ?><?php echo isset($_GET['search']) ? '&search=' . $_GET['search'] : ''; ?>" class="btn btn-primary" style="margin: 0 5px;">
+          下一页 <i class="icon icon-chevron-right"></i>
+        </a>
+      <?php else: ?>
+        <span class="btn btn-default disabled" style="margin: 0 5px;">
+          下一页 <i class="icon icon-chevron-right"></i>
+        </span>
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php endif; ?>
+  
   <div class="col-md-12" style="margin-bottom: 5em;">
     <hr />
     <div class="col-md-8 col-xs-12" style="padding-bottom:5px">
@@ -100,11 +164,38 @@ if ($config['ad_top']) echo $config['ad_top_info'];
         <div class="btn-group">
           <a class="btn btn-danger btn-mini" href="?<?php echo http_build_query($httpUrl); ?>">当前<?php echo $allUploud; ?></a>
           <a class="btn btn-primary btn-mini" href="list.php">今日<?php echo get_file_by_glob(APP_ROOT . config_path() . '*.*', 'number'); ?></a>
-          <a class="btn btn-mini" href="?date=<?php echo date("Y/m/d/", strtotime("-1 day")) ?>">昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")), 'number'); ?></a>
+          <a class="btn btn-mini" href="?date=<?php echo date("Y/m/d/", strtotime("-1 day")) ?>">昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")) . '*.*', 'number'); ?></a>
           <?php
-          // 倒推日期显示上传图片 @param $listDate 配置的倒退日期
-          for ($x = 2; $x <= $listDate; $x++)
-            echo '<a class="btn btn-mini hidden-xs inline-block" href="?date=' . date('Y/m/d/', strtotime("-$x day"))  .  '">' . date('j号', strtotime("-$x day")) . '</a>';
+          // ========== 智能日期显示: 只显示有图片的日期 ==========
+          $datesWithImages = [];
+          
+          // 优化: 先检查目录是否存在,避免对不存在的目录进行缓存查询
+          for ($x = 2; $x <= $listDate - 1; $x++) {
+            $checkDate = date('Y/m/d/', strtotime("-$x day"));
+            $checkPath = APP_ROOT . $config['path'] . $checkDate;
+            
+            // 先用 is_dir 快速检查目录是否存在(本地文件系统调用,比 Redis 往返快)
+            if (!is_dir($checkPath)) {
+              continue; // 目录不存在,跳过
+            }
+            
+            // 目录存在,再查询文件数量(会使用缓存)
+            $count = get_file_by_glob($checkPath . '*.*', 'number');
+            
+            if ($count > 0) {
+              $datesWithImages[] = [
+                'date' => $checkDate,
+                'count' => $count,
+                'label' => date('j号', strtotime("-$x day"))
+              ];
+            }
+          }
+          
+          // 显示有图片的日期按钮
+          foreach ($datesWithImages as $dateInfo) {
+            echo '<a class="btn btn-mini hidden-xs inline-block" href="?date=' . $dateInfo['date'] . '" title="' . $dateInfo['count'] . ' 张图片">' 
+                 . $dateInfo['label'] . ' <span class="badge">' . $dateInfo['count'] . '</span></a>';
+          }
           ?>
         </div>
         <?php if (is_who_login('admin')) : ?>
@@ -233,6 +324,18 @@ if ($config['ad_top']) echo $config['ad_top_info'];
       }).show();
     });
 
+    // 更新卡片选中样式
+    function updateCardStyle(checkbox) {
+      const card = checkbox.closest('.card');
+      if (card) {
+        if (checkbox.checked) {
+          card.classList.add('selected');
+        } else {
+          card.classList.remove('selected');
+        }
+      }
+    }
+
     // 取消/全选文件
     function opcheckboxed(objName, type) {
       var objNameList = document.getElementsByName(objName);
@@ -247,6 +350,8 @@ if ($config['ad_top']) echo $config['ad_top_info'];
               objNameList[i].checked = true;
             }
           }
+          // 更新卡片样式
+          updateCardStyle(objNameList[i]);
         }
       }
     }
@@ -361,6 +466,19 @@ if ($config['ad_top']) echo $config['ad_top_info'];
       delay: 300,
     })
 
+    // 监听复选框变化,实时更新卡片选中状态
+    document.addEventListener('DOMContentLoaded', function() {
+      const checkboxes = document.querySelectorAll('input[name="checkbox"]');
+      checkboxes.forEach(function(checkbox) {
+        // 初始化状态
+        updateCardStyle(checkbox);
+        // 监听变化
+        checkbox.addEventListener('change', function() {
+          updateCardStyle(this);
+        });
+      });
+    });
+
     // 返回顶部
     var back_to_top_button = jQuery('.btn-back-to-top');
     jQuery(window).scroll(function() {
@@ -395,7 +513,7 @@ if ($config['ad_top']) echo $config['ad_top_info'];
     });
 
     // 更改网页标题
-    document.title = "图床广场 - 今日上传<?php echo get_file_by_glob(APP_ROOT . config_path(), 'number'); ?>张 昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")) . '*.*', 'number'); ?>张 - <?php echo $config['title']; ?>"
+    document.title = "图床广场 - 今日上传<?php echo get_file_by_glob(APP_ROOT . config_path() . '*.*', 'number'); ?>张 昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")) . '*.*', 'number'); ?>张 - <?php echo $config['title']; ?>"
   </script>
   <?php
   /** 引入底部 */

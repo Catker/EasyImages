@@ -147,6 +147,16 @@ if ($handle->uploaded) {
 
     // 默认目录
     $Img_path = config_path();
+
+    // 管理员自定义上传日期（优先级最高）
+    if (checkLogin() === 204 && !empty($_POST['target_date'])) {
+        // 过滤非法字符，只保留数字和斜杠
+        $target_date = preg_replace('/[^0-9\/]/', '', $_POST['target_date']);
+        // 验证日期格式 YYYY/MM/DD/
+        if (preg_match('/^\d{4}\/\d{2}\/\d{2}\/$/', $target_date)) {
+            $Img_path = config_path($target_date);
+        }
+    }
     // 开启管理员自定义目录
     if ($config['admin_path_status']) {
         if (checkLogin() === 204) {

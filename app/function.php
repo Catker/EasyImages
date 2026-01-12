@@ -364,11 +364,44 @@ function getExtensions()
  */
 function getDirectorySize($path)
 {
-    $bytestotal = 0;
+    clearstatcache(true, $path);
     $path = realpath($path);
-    if ($path !== false && $path != '' && file_exists($path)) {
-        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS)) as $object) {
-            $bytestotal += $object->getSize();
+    if ($path === false || $path == '' || !file_exists($path)) {
+        return 0;
+    }
+    
+    // 优先使用系统命令（NFS 友好，性能更好）
+    // 检查 shell_exec 是否可用（与 stat_async.php 保持一致）
+    $canUseShell = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
+    
+    if ($canUseShell && !defined('DISABLE_SHELL_COMMANDS')) {
+        $escapedPath = escapeshellarg($path);
+        $result = @shell_exec("du -sb {$escapedPath} 2>/dev/null");
+        if ($result !== null && preg_match('/^(\d+)/', $result, $matches)) {
+            return (int)$matches[1];
+        }
+    }
+    
+    // 回退到 PHP 递归方法（添加超时保护）
+    $bytestotal = 0;
+    $startTime = time();
+    $timeout = 30; // 30秒超时
+    
+    if (is_readable($path)) {
+        try {
+            foreach (new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::LEAVES_ONLY,
+                RecursiveIteratorIterator::CATCH_GET_CHILD
+            ) as $object) {
+                // 超时检查
+                if ((time() - $startTime) > $timeout) {
+                    break;
+                }
+                $bytestotal += $object->getSize();
+            }
+        } catch (Exception $e) {
+            // 忽略权限错误
         }
     }
     return $bytestotal;
@@ -381,12 +414,52 @@ function getDirectorySize($path)
  */
 function getFileNumber($dir)
 {
+    clearstatcache(true);
+    
+    // 处理 glob 模式路径，提取基础目录
+    $baseDir = rtrim($dir, '/*');
+    $realDir = realpath($baseDir);
+    
+    if ($realDir === false || !is_dir($realDir)) {
+        return 0;
+    }
+    
+    // 优先使用系统命令（NFS 友好，性能更好）
+    // 检查 shell_exec 是否可用（与 stat_async.php 保持一致）
+    $canUseShell = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
+    
+    if ($canUseShell && !defined('DISABLE_SHELL_COMMANDS')) {
+        $escapedPath = escapeshellarg($realDir);
+        $result = @shell_exec("find {$escapedPath} -type f 2>/dev/null | wc -l");
+        if ($result !== null) {
+            $count = (int)trim($result);
+            if ($count >= 0) {
+                return $count;
+            }
+        }
+    }
+    
+    // 回退到原递归方法（添加超时保护）
+    static $startTime = null;
+    static $timeout = 30;
+    
+    if ($startTime === null) {
+        $startTime = time();
+    }
+    
     $num = 0;
-    $arr = glob($dir);
+    $arr = @glob($dir);
+    if ($arr === false) {
+        return 0;
+    }
     foreach ($arr as $v) {
-        if (is_file($v)) {
+        // 超时检查
+        if ((time() - $startTime) > $timeout) {
+            break;
+        }
+        if (@is_file($v)) {
             $num++;
-        } else {
+        } elseif (@is_readable($v)) {
             $num += getFileNumber($v . "/*");
         }
     }
@@ -403,19 +476,29 @@ function getFileNumber($dir)
  */
 function getDirList($dir)
 {
-    $dirArray[] = NULL;
-    if (false != ($handle = opendir($dir))) {
-        $i = 0;
-        while (false !== ($file = readdir($handle))) {
-            //去掉"“.”、“..”以及带“.xxx”后缀的文件
-            if ($file != "." && $file != ".." && !strpos($file, ".")) {
-                $dirArray[$i] = $file;
-                $i++;
-            }
-        }
-        //关闭句柄
-        closedir($handle);
+    $dirArray = array();
+    clearstatcache(true, $dir);
+    
+    // 检查目录是否存在且可读
+    if (!is_dir($dir) || !is_readable($dir)) {
+        return $dirArray;
     }
+    
+    $handle = @opendir($dir);
+    if ($handle === false) {
+        return $dirArray;
+    }
+    
+    $i = 0;
+    while (false !== ($file = readdir($handle))) {
+        //去掉""."、".."以及带".xxx"后缀的文件
+        if ($file != "." && $file != ".." && !strpos($file, ".")) {
+            $dirArray[$i] = $file;
+            $i++;
+        }
+    }
+    //关闭句柄
+    closedir($handle);
     return $dirArray;
 }
 
@@ -426,24 +509,32 @@ function getDirList($dir)
  */
 function getFile($dir)
 {
-    $fileArray[] = NULL;
-    if (is_dir($dir)) {
-        if (false != ($handle = opendir($dir))) {
-            $i = 0;
-            while (false !== ($file = readdir($handle))) {
-                //去掉"“.”、“..”以及带“.xxx”后缀的文件
-                if ($file != "." && $file != ".." && strpos($file, ".")) {
-                    $fileArray[$i] = $file;
-                    if ($i == 1000) {
-                        break;
-                    }
-                    $i++;
-                }
+    $fileArray = array();
+    clearstatcache(true, $dir);
+    
+    // 检查目录是否存在且可读
+    if (!is_dir($dir) || !is_readable($dir)) {
+        return $fileArray;
+    }
+    
+    $handle = @opendir($dir);
+    if ($handle === false) {
+        return $fileArray;
+    }
+    
+    $i = 0;
+    while (false !== ($file = readdir($handle))) {
+        // 去掉"."、".."以及带".xxx"后缀的文件
+        if ($file != "." && $file != ".." && strpos($file, ".")) {
+            $fileArray[$i] = $file;
+            if ($i == 1000) {
+                break;
             }
-            //关闭句柄
-            closedir($handle);
+            $i++;
         }
     }
+    // 关闭句柄
+    closedir($handle);
     return $fileArray;
 }
 
@@ -459,31 +550,100 @@ function getFile($dir)
 function get_file_by_glob($dir_fileName_suffix, $type = 'list')
 {
     global $config;
+    static $cache = null;
+    static $cacheType = null;
+    
+    // 初始化缓存(优先使用 Redis,失败则降级到文件缓存)
+    if ($cache === null) {
+        try {
+            // 尝试使用 Redis
+            require_once __DIR__ . '/redis_cache.php';
+            $cache = new RedisCache(
+                $config['redis_host'] ?? '127.0.0.1',
+                $config['redis_port'] ?? 6379,
+                $config['redis_password'] ?? null
+            );
+            $cacheType = 'redis';
+        } catch (Exception $e) {
+            // Redis 不可用,降级到文件缓存
+            try {
+                require_once __DIR__ . '/file_cache.php';
+                $cache = new FileCache();
+                $cacheType = 'file';
+            } catch (Exception $e2) {
+                // 缓存完全不可用,使用原始方法
+                $cache = false;
+                $cacheType = 'none';
+            }
+        }
+    }
+    
+    // 使用缓存
+    if ($cache !== false) {
+        if ($type == 'list') {
+            // 解析路径和模式
+            $pathInfo = pathinfo($dir_fileName_suffix);
+            $dir = $pathInfo['dirname'];
+            $pattern = $pathInfo['basename'];
+            
+            // 使用缓存获取文件列表
+            $files = $cache->getFileList($dir, $pattern);
+            
+            // 排序
+            if ($files && isset($config['showSort'])) {
+                switch ($config['showSort']) {
+                    case 1:
+                        $files = array_reverse($files);
+                        break;
+                }
+            }
+            
+            return $files ?: [];
+        }
 
-    // 获取所有文件
+        if ($type == 'number') {
+            // 解析 glob 路径,提取目录部分
+            // 例如: /path/to/i/2026/01/10/*.* -> /path/to/i/2026/01/10/
+            $pathInfo = pathinfo($dir_fileName_suffix);
+            $dir = $pathInfo['dirname'];
+            $pattern = $pathInfo['basename'];
+            
+            // 如果是 glob 模式(包含 * 或 ?),使用目录路径
+            if (strpos($pattern, '*') !== false || strpos($pattern, '?') !== false) {
+                // 使用缓存获取目录下的文件数量(非递归,只统计当前目录)
+                return $cache->getFileCount($dir, false);
+            } else {
+                // 纯目录路径,递归统计
+                return $cache->getFileCount($dir_fileName_suffix, true);
+            }
+        }
+    }
+    
+    // 缓存不可用时的降级处理(原始实现)
     if ($type == 'list') {
         $glob = glob($dir_fileName_suffix, GLOB_BRACE);
+        $res = [];
 
         if ($glob) {
             foreach ($glob as $v) {
                 if (is_file($v)) $res[] = basename($v);
             }
             // 排序
-            if ($res) {
+            if ($res && isset($config['showSort'])) {
                 switch ($config['showSort']) {
                     case 1:
                         $res = array_reverse($res);
                         break;
                 }
             }
-        } else {
-            $res = array();
         }
+        
+        return $res;
     }
 
     if ($type == 'number') {
         $res = 0;
-        $glob = glob($dir_fileName_suffix); //把该路径下所有的文件存到一个数组里面;
+        $glob = glob($dir_fileName_suffix);
         if ($glob) {
             foreach ($glob as $v) {
                 if (is_file($v)) {
@@ -492,11 +652,11 @@ function get_file_by_glob($dir_fileName_suffix, $type = 'list')
                     $res += get_file_by_glob($v . "/*", $type = 'number');
                 }
             }
-        } else {
-            $res = 0;
         }
+        return $res;
     }
-    return $res;
+    
+    return [];
 }
 
 /**
@@ -510,13 +670,26 @@ function getdirnum($file)
 {
     $dirn = 0; //目录数
     $filen = 0; //文件数
-    $dir = opendir($file);
-    while ($filename = readdir($dir)) {
+    
+    clearstatcache(true, $file);
+    
+    // 检查目录是否存在且可读
+    if (!is_dir($file) || !is_readable($file)) {
+        return;
+    }
+    
+    $dir = @opendir($file);
+    if ($dir === false) {
+        return;
+    }
+    
+    while (($filename = readdir($dir)) !== false) {
         if ($filename != "." && $filename != "..") {
-            $filename = $file . "/" . $filename;
-            if (is_dir($filename)) {
+            $fullpath = $file . "/" . $filename;
+            clearstatcache(true, $fullpath);
+            if (is_dir($fullpath)) {
                 $dirn++;
-                getdirnum($filename);
+                getdirnum($fullpath);
                 //递归，就可以查看所有子目录
             } else {
                 $filen++;

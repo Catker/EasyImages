@@ -26,6 +26,12 @@ mustLogin();
       <button type="button" class="btn btn-link uploader-btn-browse"><i class="icon icon-plus"></i> 选择文件</button>
       <button type="button" class="btn btn-link uploader-btn-start"><i class="icon icon-cloud-upload"></i> 开始上传</button>
       <button type="button" class="btn btn-link uploader-btn-stop"><i class="icon icon-pause"></i> 暂停上传</button>
+      <?php /** 管理员自定义上传日期 */ if (is_who_login('admin')) : ?>
+      <div class="input-group input-group-sm" style="display:inline-flex; width:auto; margin-left:5px; vertical-align:middle;">
+        <input type="text" class="form-control form-date" id="target_date" placeholder="指定日期" style="width:90px;height:26px;" readonly data-toggle="tooltip" title="管理员可指定上传日期">
+        <span class="input-group-btn"><button type="button" class="btn btn-default" style="padding:3px 6px;height:26px;" onclick="$('#target_date').val('')" title="清除"><i class="icon icon-remove" style="font-size:9px;"></i></button></span>
+      </div>
+      <?php endif; ?>
       <div class="uploader-status pull-right text-muted hidden-xs"></div>
       <div class="uploader-status pull-right text-muted col-xs-12 text-ellipsis visible-xs"></div>
     </div>
@@ -88,8 +94,14 @@ mustLogin();
 </div>
 <link rel="stylesheet" href="<?php static_cdn(); ?>/public/static/marquee/marquee.css">
 <link rel="stylesheet" href="<?php static_cdn(); ?>/public/static/zui/lib/uploader/zui.uploader.min.css">
+<?php if (is_who_login('admin')) : ?>
+<link rel="stylesheet" href="<?php static_cdn(); ?>/public/static/zui/lib/datetimepicker/datetimepicker.min.css">
+<?php endif; ?>
 <script type="application/javascript" src="<?php static_cdn(); ?>/public/static/zui/lib/uploader/zui.uploader.min.js"></script>
 <script type="application/javascript" src="<?php static_cdn(); ?>/public/static/marquee/marquee.min.js"></script>
+<?php if (is_who_login('admin')) : ?>
+<script type="application/javascript" src="<?php static_cdn(); ?>/public/static/zui/lib/datetimepicker/datetimepicker.min.js"></script>
+<?php endif; ?>
 <script type="application/javascript" src="<?php static_cdn(); ?>/public/static/EasyImage.js"></script>
 <script>
   // 公告
@@ -128,9 +140,12 @@ mustLogin();
     flash_swf_url: '<?php static_cdn(); ?>/public/static/zui/lib/uploader/Moxie.swf',
     // silverlight 上传组件地址
     flash_swf_url: '<?php static_cdn(); ?>/public/static/zui/lib/uploader/Moxie.xap',
-    // sign
-    multipart_params: {
-      'sign': new Date().getTime() / 1000 | 0,
+    // sign 和自定义日期
+    multipart_params: function() {
+      return {
+        'sign': new Date().getTime() / 1000 | 0,
+        'target_date': $('#target_date').length ? $('#target_date').val() : ''
+      };
     },
     // 预览图尺寸
     previewImageSize: {
@@ -214,6 +229,20 @@ mustLogin();
       }
     },
   });
+
+  <?php /** 管理员日期选择器初始化 */ if (is_who_login('admin')) : ?>
+  // 自定义上传日期选择器
+  $(".form-date").datetimepicker({
+    weekStart: 1,
+    todayBtn: 1,
+    autoclose: 1,
+    todayHighlight: 1,
+    startView: 2,
+    minView: 2,
+    forceParse: 0,
+    format: "yyyy/mm/dd/"
+  });
+  <?php endif; ?>
 </script>
 <?php
 /** 环境检测 */

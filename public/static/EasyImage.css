@@ -41,6 +41,8 @@
     .card {
         box-shadow: rgba(0, 0, 0, 0.45) 0px 25px 20px -20px;
         border-radius: 5px 5px 5px 5px;
+        position: relative;
+        overflow: hidden;
     }
 
     img {
@@ -55,13 +57,104 @@
     }
 
     .bottom-bar {
-        opacity: 0;
+        opacity: 1;
         width: 100%;
         position: absolute;
-        bottom: 0.1px;
-        background-color: rgba(0, 0, 0, 0.5);
+        bottom: 0;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.4));
+        padding: 4px 6px;
+        transition: all 0.3s ease;
+        border-radius: 0 0 5px 5px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
     }
 
     .bottom-bar:hover {
-        opacity: 1;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5));
+    }
+
+    .bottom-bar-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 1px;
+    }
+
+    .bottom-bar a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        margin: 0;
+        border-radius: 2px;
+        transition: all 0.2s ease;
+        color: rgba(255, 255, 255, 0.75);
+    }
+
+    .bottom-bar a:hover {
+        background-color: rgba(255, 255, 255, 0.12);
+        color: #fff;
+    }
+
+    .bottom-bar i {
+        font-size: 11px;
+    }
+
+    /* 卡片选中状态 */
+    .card.selected {
+        outline: 3px solid #3280fc;
+        outline-offset: -3px;
+        box-shadow: 0 0 20px rgba(50, 128, 252, 0.5);
+        position: relative;
+    }
+
+    /* 选中标记 */
+    .card.selected::before {
+        content: "✓";
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 30px;
+        height: 30px;
+        line-height: 30px;
+        text-align: center;
+        background-color: #3280fc;
+        color: white;
+        border-radius: 50%;
+        font-size: 18px;
+        font-weight: bold;
+        z-index: 101;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    /* 优化复选框样式 */
+    .bottom-bar label {
+        display: inline-flex;
+        align-items: center;
+        margin: 0;
+        padding: 2px 5px;
+        border-radius: 2px;
+        cursor: pointer;
+        user-select: none;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 11px;
+        transition: all 0.2s ease;
+        background-color: rgba(255, 255, 255, 0.06);
+        white-space: nowrap;
+    }
+
+    .bottom-bar label:hover {
+        background-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .bottom-bar input[type="checkbox"] {
+        cursor: pointer;
+        margin: 0 3px 0 0;
+        width: 11px;
+        height: 11px;
+        vertical-align: middle;
+        flex-shrink: 0;
     }

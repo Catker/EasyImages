@@ -20,13 +20,69 @@ function total_files($file)
 {
     global $dirn;
     global $filen;
-    $dir = opendir($file);
-    while ($filename = readdir($dir)) {
+    
+    // 清除文件状态缓存
+    clearstatcache(true, $file);
+    
+    // 解析真实路径
+    $realPath = realpath($file);
+    if ($realPath === false || !is_dir($realPath)) {
+        return;
+    }
+    
+    // 优先使用系统命令（NFS 友好，性能更好）
+    if (function_exists('shell_exec') && !defined('DISABLE_SHELL_COMMANDS')) {
+        $escapedPath = escapeshellarg($realPath);
+        
+        // 统计文件数
+        $fileResult = @shell_exec("find {$escapedPath} -type f 2>/dev/null | wc -l");
+        if ($fileResult !== null) {
+            $filen = (int)trim($fileResult);
+        }
+        
+        // 统计目录数（减1排除根目录本身）
+        $dirResult = @shell_exec("find {$escapedPath} -type d 2>/dev/null | wc -l");
+        if ($dirResult !== null) {
+            $dirn = max(0, (int)trim($dirResult) - 1);
+        }
+        
+        // 如果系统命令成功获取到数据，直接返回
+        if ($fileResult !== null && $dirResult !== null) {
+            return;
+        }
+    }
+    
+    // 回退到原递归方法（添加超时保护）
+    static $startTime = null;
+    static $timeout = 60; // 60秒超时
+    
+    if ($startTime === null) {
+        $startTime = time();
+    }
+    
+    // 检查目录是否存在且可读
+    if (!is_readable($realPath)) {
+        return;
+    }
+    
+    $dir = @opendir($realPath);
+    if ($dir === false) {
+        return;
+    }
+    
+    while (($filename = readdir($dir)) !== false) {
+        // 超时检查
+        if ((time() - $startTime) > $timeout) {
+            closedir($dir);
+            return;
+        }
+        
         if ($filename != "." && $filename != "..") {
-            $filename = $file . "/" . $filename;
-            if (is_dir($filename)) {
+            $fullpath = $realPath . "/" . $filename;
+            clearstatcache(true, $fullpath);
+            if (is_dir($fullpath)) {
                 $dirn++;
-                total_files($filename);  //递归，就可以查看所有子目录
+                total_files($fullpath);
             } else {
                 $filen++;
             }
