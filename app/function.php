@@ -553,27 +553,46 @@ function get_file_by_glob($dir_fileName_suffix, $type = 'list')
     static $cache = null;
     static $cacheType = null;
     
-    // 初始化缓存(优先使用 Redis,失败则降级到文件缓存)
+    // 获取缓存类型配置: 0=关闭, 1=文件缓存, 2=Redis缓存
+    $cacheMode = isset($config['plaza_cache_type']) ? (int)$config['plaza_cache_type'] : 2;
+    
+    // 初始化缓存
     if ($cache === null) {
-        try {
-            // 尝试使用 Redis
-            require_once __DIR__ . '/redis_cache.php';
-            $cache = new RedisCache(
-                $config['redis_host'] ?? '127.0.0.1',
-                $config['redis_port'] ?? 6379,
-                $config['redis_password'] ?? null
-            );
-            $cacheType = 'redis';
-        } catch (Exception $e) {
-            // Redis 不可用,降级到文件缓存
+        if ($cacheMode === 0) {
+            // 关闭缓存
+            $cache = false;
+            $cacheType = 'none';
+        } elseif ($cacheMode === 1) {
+            // 强制使用文件缓存
             try {
                 require_once __DIR__ . '/file_cache.php';
                 $cache = new FileCache();
                 $cacheType = 'file';
-            } catch (Exception $e2) {
-                // 缓存完全不可用,使用原始方法
+            } catch (Exception $e) {
                 $cache = false;
                 $cacheType = 'none';
+            }
+        } else {
+            // Redis 缓存（失败降级到文件缓存）
+            try {
+                require_once __DIR__ . '/redis_cache.php';
+                $cache = new RedisCache(
+                    $config['redis_host'] ?? '127.0.0.1',
+                    $config['redis_port'] ?? 6379,
+                    $config['redis_password'] ?? null
+                );
+                $cacheType = 'redis';
+            } catch (Exception $e) {
+                // Redis 不可用,降级到文件缓存
+                try {
+                    require_once __DIR__ . '/file_cache.php';
+                    $cache = new FileCache();
+                    $cacheType = 'file';
+                } catch (Exception $e2) {
+                    // 缓存完全不可用,使用原始方法
+                    $cache = false;
+                    $cacheType = 'none';
+                }
             }
         }
     }

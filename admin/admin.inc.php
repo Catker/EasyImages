@@ -48,6 +48,11 @@ if (isset($_POST['update'])) {
         exit(header("refresh:1;"));
     }
 
+    // 将需要整数类型的字段进行类型转换
+    if (isset($postArr['plaza_cache_type'])) {
+        $postArr['plaza_cache_type'] = (int)$postArr['plaza_cache_type'];
+    }
+
     $new_config = array_replace($config, $postArr);
     cache_write($config_file, $new_config);
     echo '
@@ -1091,12 +1096,29 @@ auto_delete(); //定时删除
                     </div>
                 </div>
                 <div class="col-md-12">
-                    <div class="col-md-6">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label data-toggle="tooltip" title="广场页面的缓存策略<br/>Redis 性能最佳<br/>0=关闭 1=文件缓存 2=Redis">广场缓存模式</label>
+                            <select class="form-control" name="plaza_cache_type">
+                                <option value="0" <?php if (isset($config['plaza_cache_type']) && $config['plaza_cache_type'] == 0) echo 'selected'; ?>>关闭缓存</option>
+                                <option value="1" <?php if (isset($config['plaza_cache_type']) && $config['plaza_cache_type'] == 1) echo 'selected'; ?>>文件缓存</option>
+                                <option value="2" <?php if (!isset($config['plaza_cache_type']) || $config['plaza_cache_type'] == 2) echo 'selected'; ?>>Redis 缓存</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label>缓存工具</label><br/>
+                            <a class="btn btn-mini btn-info" href="/app/cache_status.php" target="_blank" data-toggle="tooltip" title="查看缓存状态和诊断信息"><i class="icon icon-dashboard"></i> 缓存状态</a>
+                            <br/><small class="text-muted" data-toggle="tooltip" title="缓存预热需通过命令行执行"><i class="icon icon-terminal"></i> 预热命令: <code style="white-space:nowrap;">php cache_warmup.php</code></small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
                         <label data-toggle="tooltip" title="广场每页显示的图片数量<br/>根据服务器性能和网络情况调整<br/>建议值: 20-50 张">广场每页显示数量 | 当前: </label>
                         <label id="plaza_per_page"><?php echo isset($config['plaza_per_page']) ? $config['plaza_per_page'] : 30; ?>张</label>
                         <input type="range" class="form-control" name="plaza_per_page" value="<?php echo isset($config['plaza_per_page']) ? $config['plaza_per_page'] : 30; ?>" min="10" max="200" step="10" onchange="document.getElementById('plaza_per_page').innerHTML=value">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-3">
                         <label id="listDate" data-toggle="tooltip" title="智能日期显示范围<br/>扫描最近 N 天的图片<br/>只显示有图片的日期<br/>建议值: 7-30 天">智能日期显示范围 | 当前: <?php echo $config['listDate']; ?>天</label>
                         <input type="number" class="form-control" id="listDate" name="listDate" value="<?php if ($config['listDate']) echo $config['listDate']; ?>" min="1" max="365" required="required" placeholder="扫描最近 N 天的图片" onkeyup="this.value=this.value.replace(/\s/g,'')">
                     </div>

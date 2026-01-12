@@ -1,10 +1,24 @@
 <?php
 /**
- * Redis 缓存状态诊断工具
- * 用于检查 Redis 缓存是否正常工作
+ * 缓存状态诊断工具
+ * 用于检查缓存是否正常工作
+ * 
+ * 安全说明：此页面需要管理员登录才能访问
  */
 
-require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/header.php';
+
+// 安全检查：只允许管理员访问
+if (!is_who_login('admin')) {
+    header('HTTP/1.1 403 Forbidden');
+    echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>访问拒绝</title></head>';
+    echo '<body style="text-align:center;padding:50px;font-family:Arial,sans-serif;">';
+    echo '<h1 style="color:#dc3545;">403 - 访问被拒绝</h1>';
+    echo '<p>此页面需要管理员权限才能访问。</p>';
+    echo '<a href="../admin/index.php" style="color:#007bff;">返回登录</a>';
+    echo '</body></html>';
+    exit;
+}
 
 header('Content-Type: text/html; charset=utf-8');
 
@@ -187,27 +201,45 @@ if (file_exists($redisClassFile)) {
 // 6. 当前使用的缓存类型
 echo "<h2>6️⃣ 当前缓存状态</h2>\n";
 
-if ($hasRedisExtension && $hasRedisConfig) {
-    try {
-        $testRedis = new Redis();
-        if (@$testRedis->connect($config['redis_host'], $config['redis_port'], 1)) {
-            echo "<div class='status success'>✅ 当前使用: <strong>Redis 缓存</strong></div>\n";
-            $testRedis->close();
-        } else {
-            throw new Exception("连接失败");
+// 读取缓存模式配置
+$cacheMode = isset($config['plaza_cache_type']) ? (int)$config['plaza_cache_type'] : 2;
+$cacheModeNames = ['关闭缓存', '文件缓存', 'Redis 缓存'];
+$cacheModeName = $cacheModeNames[$cacheMode] ?? 'Redis 缓存';
+
+echo "<div class='status info'>📋 配置模式: <strong>{$cacheModeName}</strong> (plaza_cache_type={$cacheMode})</div>\n";
+
+if ($cacheMode === 0) {
+    echo "<div class='status warning'>⚠️ 当前使用: <strong>无缓存</strong> (直接使用 glob 扫描文件)</div>\n";
+} elseif ($cacheMode === 1) {
+    if (file_exists($fileClassFile)) {
+        echo "<div class='status success'>✅ 当前使用: <strong>文件缓存</strong></div>\n";
+    } else {
+        echo "<div class='status error'>❌ 文件缓存类不存在,实际使用 glob 扫描</div>\n";
+    }
+} else {
+    // Redis 模式
+    if ($hasRedisExtension && $hasRedisConfig) {
+        try {
+            $testRedis = new Redis();
+            if (@$testRedis->connect($config['redis_host'], $config['redis_port'], 1)) {
+                echo "<div class='status success'>✅ 当前使用: <strong>Redis 缓存</strong></div>\n";
+                $testRedis->close();
+            } else {
+                throw new Exception("连接失败");
+            }
+        } catch (Exception $e) {
+            if (file_exists($fileClassFile)) {
+                echo "<div class='status warning'>⚠️ 当前使用: <strong>文件缓存</strong> (Redis 不可用,已降级)</div>\n";
+            } else {
+                echo "<div class='status error'>❌ 当前使用: <strong>无缓存</strong> (Redis 和文件缓存均不可用)</div>\n";
+            }
         }
-    } catch (Exception $e) {
+    } else {
         if (file_exists($fileClassFile)) {
-            echo "<div class='status warning'>⚠️ 当前使用: <strong>文件缓存</strong> (Redis 不可用)</div>\n";
+            echo "<div class='status warning'>⚠️ 当前使用: <strong>文件缓存</strong> (Redis 未配置,已降级)</div>\n";
         } else {
             echo "<div class='status error'>❌ 当前使用: <strong>无缓存</strong> (使用原始 glob 方法)</div>\n";
         }
-    }
-} else {
-    if (file_exists($fileClassFile)) {
-        echo "<div class='status warning'>⚠️ 当前使用: <strong>文件缓存</strong> (Redis 未配置)</div>\n";
-    } else {
-        echo "<div class='status error'>❌ 当前使用: <strong>无缓存</strong> (使用原始 glob 方法)</div>\n";
     }
 }
 
@@ -240,12 +272,5 @@ echo "<li>刷新本页面验证配置</li>";
 echo "<li>访问广场页面或运行缓存预热脚本</li>";
 echo "</ol>";
 echo "</div>";
-
-echo "<h2>🔗 快捷操作</h2>\n";
-echo "<a href='cache_status.php' class='btn'>🔄 刷新诊断</a>\n";
-if (file_exists($warmupFile)) {
-    echo "<a href='cache_warmup.php' class='btn'>🔥 运行缓存预热</a>\n";
-}
-echo "<a href='../admin/list.php' class='btn'>📋 访问广场页面</a>\n";
 
 echo "</div>\n</body>\n</html>";

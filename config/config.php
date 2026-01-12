@@ -74,6 +74,7 @@ $config=Array
 	'redis_host'=>'127.0.0.1',
 	'redis_port'=>6379,
 	'redis_password'=>null,
+	'plaza_cache_type'=>2,
 	'customize'=>'',
 	'checkEnv'=>0,
 	'allowed'=>1,

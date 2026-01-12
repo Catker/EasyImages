@@ -1,19 +1,29 @@
 <?php
 /**
- * Redis 缓存预热脚本
+ * 缓存预热脚本
  * 在后台定期更新缓存,避免用户请求时触发慢速 NFS 扫描
  * 
  * 功能:
  * - 自动读取 config['listDate'] 配置
  * - 预热最近 N 天的日期目录(与广场页面智能显示天数保持一致)
- * - 支持 Redis 和文件缓存
+ * - 根据 plaza_cache_type 配置使用 Redis 或文件缓存
  * 
  * 使用方法:
  * php app/cache_warmup.php
  * 
  * Crontab 配置(建议每15分钟执行一次,在缓存过期前刷新):
  * 每15分钟: php /path/to/app/cache_warmup.php >> /var/log/redis_warmup.log 2>&1
+ * 
+ * 安全说明：此脚本只能通过命令行执行，禁止 HTTP 访问
  */
+
+// 安全检查：只允许 CLI 执行，禁止 HTTP 访问
+if (php_sapi_name() !== 'cli') {
+    header('HTTP/1.1 403 Forbidden');
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "403 Forbidden\n\n此脚本只能通过命令行执行。\nThis script can only be run from the command line.\n\n使用方法: php app/cache_warmup.php";
+    exit(1);
+}
 
 // 强制输出到标准输出
 @ini_set('implicit_flush', 1);
@@ -22,35 +32,47 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/function.php';
 
+// 获取缓存类型配置: 0=关闭, 1=文件缓存, 2=Redis缓存
+$cacheMode = isset($config['plaza_cache_type']) ? (int)$config['plaza_cache_type'] : 2;
+
+if ($cacheMode === 0) {
+    echo "[INFO] 广场缓存已关闭 (plaza_cache_type=0)\n";
+    echo "[INFO] 如需启用缓存,请在设置中修改缓存模式\n";
+    flush();
+    exit(0);
+}
+
 try {
-    // 尝试使用 Redis
-    require_once __DIR__ . '/redis_cache.php';
-    $cache = new RedisCache(
-        $config['redis_host'] ?? '127.0.0.1',
-        $config['redis_port'] ?? 6379,
-        $config['redis_password'] ?? null
-    );
-    $cacheType = 'Redis';
-    echo "[INFO] Redis 连接成功\n";
-    flush();
-} catch (Exception $e) {
-    echo "[WARN] Redis 连接失败: " . $e->getMessage() . "\n";
-    flush();
-    
-    // Redis 不可用,使用文件缓存
-    try {
+    if ($cacheMode === 1) {
+        // 强制使用文件缓存
         require_once __DIR__ . '/file_cache.php';
         $cache = new FileCache();
         $cacheType = '文件缓存';
-        echo "[INFO] 已降级到文件缓存\n";
-        flush();
-    } catch (Exception $e2) {
-        echo "[ERROR] 无法初始化缓存系统\n";
-        echo "[ERROR] Redis 错误: " . $e->getMessage() . "\n";
-        echo "[ERROR] 文件缓存错误: " . $e2->getMessage() . "\n";
-        flush();
-        exit(1);
+        echo "[INFO] 使用文件缓存 (plaza_cache_type=1)\n";
+    } else {
+        // Redis 缓存（失败降级到文件缓存）
+        try {
+            require_once __DIR__ . '/redis_cache.php';
+            $cache = new RedisCache(
+                $config['redis_host'] ?? '127.0.0.1',
+                $config['redis_port'] ?? 6379,
+                $config['redis_password'] ?? null
+            );
+            $cacheType = 'Redis';
+            echo "[INFO] Redis 连接成功\n";
+        } catch (Exception $e) {
+            echo "[WARN] Redis 连接失败: " . $e->getMessage() . "\n";
+            require_once __DIR__ . '/file_cache.php';
+            $cache = new FileCache();
+            $cacheType = '文件缓存';
+            echo "[INFO] 已降级到文件缓存\n";
+        }
     }
+    flush();
+} catch (Exception $e) {
+    echo "[ERROR] 无法初始化缓存系统: " . $e->getMessage() . "\n";
+    flush();
+    exit(1);
 }
 
 echo "========================================\n";
@@ -111,7 +133,10 @@ foreach ($paths as $index => $path) {
     
     $itemStart = microtime(true);
     
-    // 预热文件列表
+    // 强制刷新：先清除该路径的缓存，确保重新写入并重置 TTL
+    $cache->clearCache($path);
+    
+    // 预热文件列表（由于缓存已清除，会强制重新扫描并写入）
     $files = $cache->getFileList($path, '*.*');
     
     // 预热文件数量
