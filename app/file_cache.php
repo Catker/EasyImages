@@ -26,12 +26,12 @@ class FileCache {
      * @param string $pattern 文件模式
      * @return array 文件名数组
      */
-    public function getFileList($path, $pattern = '*.*') {
+    public function getFileList($path, $pattern = '*.*', $forceRefresh = false) {
         $cacheKey = md5($path . $pattern);
         $cacheFile = $this->cacheDir . $cacheKey . '.json';
         
-        // 检查缓存
-        if (file_exists($cacheFile)) {
+        // 如果不是强制刷新，检查缓存
+        if (!$forceRefresh && file_exists($cacheFile)) {
             $cacheAge = time() - filemtime($cacheFile);
             if ($cacheAge < $this->cacheTime) {
                 $data = json_decode(file_get_contents($cacheFile), true);
@@ -93,27 +93,27 @@ class FileCache {
      * @param bool $recursive 是否递归
      * @return int 文件数量
      */
-    public function getFileCount($path, $recursive = false) {
+    public function getFileCount($path, $recursive = false, $forceRefresh = false) {
         // 对于非递归情况，直接使用文件列表的 count，避免重复扫描
         // 与 redis_cache.php 的逻辑保持一致
         if (!$recursive) {
-            // 先尝试从 count 缓存获取
             $cacheKey = md5($path);
             $cacheFile = $this->cacheDir . $cacheKey . '_count.txt';
             
-            if (file_exists($cacheFile)) {
+            // 如果不是强制刷新，先尝试从 count 缓存获取
+            if (!$forceRefresh && file_exists($cacheFile)) {
                 $cacheAge = time() - filemtime($cacheFile);
                 if ($cacheAge < $this->cacheTime) {
                     return (int)file_get_contents($cacheFile);
                 }
             }
             
-            // count 缓存未命中，尝试从 list 缓存获取并计数
-            // 这样可以复用已有的文件列表缓存，避免重复扫描
+            // count 缓存未命中或强制刷新，从 list 缓存获取并计数
+            // 注意：不传递 forceRefresh 给 getFileList，避免双重扫描
             $files = $this->getFileList($path, '*.*');
             $count = count($files);
             
-            // 保存 count 缓存
+            // 保存 count 缓存（覆盖写入，重置 TTL）
             @file_put_contents($cacheFile, $count);
             
             return $count;

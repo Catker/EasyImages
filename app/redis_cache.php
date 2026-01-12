@@ -41,21 +41,23 @@ class RedisCache {
      * @param string $pattern 文件模式,如 *.* 或 *.jpg
      * @return array 文件名数组
      */
-    public function getFileList($path, $pattern = '*.*') {
+    public function getFileList($path, $pattern = '*.*', $forceRefresh = false) {
         $cacheKey = $this->prefix . 'list:' . md5($path . $pattern);
         
-        // 尝试从缓存获取
-        $cached = $this->redis->get($cacheKey);
-        if ($cached !== false) {
-            $files = json_decode($cached, true);
-            $count = is_array($files) ? count($files) : 0;
-            error_log(sprintf(
-                "[RedisCache] 缓存命中: %s | 文件数: %d, 数据大小: %d 字节",
-                $path,
-                $count,
-                strlen($cached)
-            ));
-            return $files;
+        // 如果不是强制刷新，尝试从缓存获取
+        if (!$forceRefresh) {
+            $cached = $this->redis->get($cacheKey);
+            if ($cached !== false) {
+                $files = json_decode($cached, true);
+                $count = is_array($files) ? count($files) : 0;
+                error_log(sprintf(
+                    "[RedisCache] 缓存命中: %s | 文件数: %d, 数据大小: %d 字节",
+                    $path,
+                    $count,
+                    strlen($cached)
+                ));
+                return $files;
+            }
         }
         
         // 缓存未命中,扫描目录
@@ -139,22 +141,26 @@ class RedisCache {
      * @param bool $recursive 是否递归统计
      * @return int 文件数量
      */
-    public function getFileCount($path, $recursive = false) {
+    public function getFileCount($path, $recursive = false, $forceRefresh = false) {
         // 对于非递归情况,直接使用文件列表的 count,避免重复扫描
         if (!$recursive) {
-            // 先尝试从 count 缓存获取
             $cacheKey = $this->prefix . 'count:' . md5($path);
-            $cached = $this->redis->get($cacheKey);
-            if ($cached !== false) {
-                return (int)$cached;
+            
+            // 如果不是强制刷新，先尝试从 count 缓存获取
+            if (!$forceRefresh) {
+                $cached = $this->redis->get($cacheKey);
+                if ($cached !== false) {
+                    return (int)$cached;
+                }
             }
             
-            // count 缓存未命中,尝试从 list 缓存获取并计数
-            // 这样可以复用已有的文件列表缓存,避免重复扫描
+            // count 缓存未命中或强制刷新，从 list 缓存获取并计数
+            // 注意：不传递 forceRefresh 给 getFileList，避免双重扫描
+            // 如果需要刷新 list，应该先单独调用 getFileList
             $files = $this->getFileList($path, '*.*');
             $count = count($files);
             
-            // 保存 count 缓存
+            // 保存 count 缓存（覆盖写入，重置 TTL）
             $this->redis->setex($cacheKey, $this->ttl, $count);
             
             return $count;

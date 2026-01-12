@@ -133,14 +133,12 @@ foreach ($paths as $index => $path) {
     
     $itemStart = microtime(true);
     
-    // 强制刷新：先清除该路径的缓存，确保重新写入并重置 TTL
-    $cache->clearCache($path);
+    // 使用 forceRefresh=true 强制覆盖缓存并重置 TTL
+    // 原子操作：不需要先清除，避免竞争条件导致缓存短暂不可用
+    $files = $cache->getFileList($path, '*.*', true);
     
-    // 预热文件列表（由于缓存已清除，会强制重新扫描并写入）
-    $files = $cache->getFileList($path, '*.*');
-    
-    // 预热文件数量
-    $count = $cache->getFileCount($path, false);
+    // 预热文件数量（同样强制刷新）
+    $count = $cache->getFileCount($path, false, true);
     
     $itemTime = round((microtime(true) - $itemStart) * 1000, 2);
     
