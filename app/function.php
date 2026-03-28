@@ -869,7 +869,11 @@ function checkImg($imageUrl, $type = 1, $dir = 'suspic/')
         //     }
         // }
 
-        if ($res['Sexy']  * 100 > $config['checkImg_value'] or $res['Porn'] * 100 > $config['checkImg_value']) {
+        if (
+            $res['Sexy'] * 100 > $config['checkImg_value'] ||
+            $res['Porn'] * 100 > $config['checkImg_value'] ||
+            $res['Hentai'] * 100 > $config['checkImg_value']
+        ) {
             $bad_pic = true;
         }
     }
