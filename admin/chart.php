@@ -3,15 +3,13 @@
  * 统计中心 (异步版)
  */
 require_once '../app/header.php';
-// 保持对 app/chart.php 的引用以防有其他副作用，但数据加载将转为异步
-require_once APP_ROOT . '/app/chart.php';
 
 // 检测登录和是否开启统计
 if (!$config['chart_on'] || !is_who_login('admin')) exit(header('Location: ' . $config['domain'] . '?hart#closed'));
 
 // 删除统计文件 (保留原有逻辑，虽然异步刷新可能不再强依赖手动删除)
 if (isset($_POST['del_total'])) {
-    @deldir($_POST['del_total']);
+    @deldir(APP_ROOT . '/admin/logs/counts/'); // 固定路径，不信任客户端传入
     echo '
 		<script>
 		new $.zui.Messager("缓存清理成功!", {
@@ -65,7 +63,7 @@ if (isset($_POST['del_total'])) {
                     <button id="btn-refresh" class="btn btn-mini btn-primary"><i class="icon icon-refresh"></i> 重新统计</button>
                     <!-- 保留清理缓存功能 -->
                     <form action="chart.php" method="post" style="display:inline-block; margin-left: 5px;" onsubmit="return confirm('确定要删除所有统计缓存吗？删除后将重新计算。');">
-                        <input type="hidden" name="del_total" value="<?php echo APP_ROOT . '/admin/logs/counts/'; ?>">
+                        <input type="hidden" name="del_total" value="1">
                         <button class="btn btn-mini btn-danger"><i class="icon icon-trash"></i> 清理缓存</button>
                     </form>
                 </div>

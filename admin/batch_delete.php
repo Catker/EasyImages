@@ -182,7 +182,7 @@ function renderUrlList() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><input type="checkbox" class="url-checkbox" data-index="${index}" ${isLocal ? 'checked' : ''} ${!isLocal ? 'disabled' : ''}></td>
-            <td><img src="${url}" style="max-width: 60px; max-height: 60px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22><text x=%2210%22 y=%2235%22 fill=%22%23999%22>Error</text></svg>'"></td>
+            <td><img src="${escapeHtml(url)}" style="max-width: 60px; max-height: 60px;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22><text x=%2210%22 y=%2235%22 fill=%22%23999%22>Error</text></svg>'"></td>
             <td style="word-break: break-all; font-size: 12px;">${escapeHtml(url)}</td>
             <td id="status-${index}">${isLocal ? '<span class="label label-success">待删除</span>' : '<span class="label label-default">外站</span>'}</td>
         `;
@@ -294,26 +294,26 @@ async function executeDelete(selected, mode) {
     let successCount = 0;
     let failCount = 0;
 
-    for (const item of selected) {
+    async function handle(item) {
         const statusEl = document.getElementById(`status-${item.index}`);
         statusEl.innerHTML = '<span class="label label-info">处理中...</span>';
-        
+
         try {
             const response = await fetch('/app/del.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                 body: `url=${encodeURIComponent(item.url)}&mode=${mode}`
             });
-            
+
             const data = await response.json();
-            
+
             if (data.code === 200) {
                 successCount++;
                 statusEl.innerHTML = '<span class="label label-success">已' + (mode === 'delete' ? '删除' : '回收') + '</span>';
                 addLog(`✓ ${item.url}`);
             } else {
                 failCount++;
-                statusEl.innerHTML = `<span class="label label-danger">${data.msg || '失败'}</span>`;
+                statusEl.innerHTML = `<span class="label label-danger">${escapeHtml(data.msg || '失败')}</span>`;
                 addLog(`✗ ${item.url} - ${data.msg || '失败'}`);
             }
         } catch (e) {
@@ -322,6 +322,12 @@ async function executeDelete(selected, mode) {
             addLog(`✗ ${item.url} - 网络错误`);
         }
     }
+
+    // 最多 5 个请求并发
+    const queue = selected.slice();
+    await Promise.all(Array.from({length: Math.min(5, queue.length)}, async () => {
+        while (queue.length) await handle(queue.shift());
+    }));
 
     addLog(`完成！成功: ${successCount}, 失败: ${failCount}`);
     new $.zui.Messager(`操作完成！成功: ${successCount}, 失败: ${failCount}`, {

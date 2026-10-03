@@ -44,14 +44,11 @@ function write_chart_total()
     $count_contents['total_time'] = date('Y-m-d H:i:s'); // 统计时间
     $count_contents['date'] = date('YmdH');              // 校对时间
 
-    for ($i = 0; $i < count($count_day); $i++) {
-        // 统计每日上传数量
-        $count_contents['chart_data'][] = [$count_day[$i] => getFileNumber($total_contents . $count_day[$i])];
-    }
-
-    for ($i = 0; $i < count($count_day); $i++) {
-        // 统计每日占用空间
-        $count_contents['chart_disk'][] = [$count_day[$i] => getDirectorySize($total_contents . $count_day[$i])];
+    foreach ($count_day as $day) {
+        // 每日上传数量与占用空间(一次遍历)
+        $stats = dir_stats($total_contents . $day);
+        $count_contents['chart_data'][] = [$day => $stats['files']];
+        $count_contents['chart_disk'][] = [$day => $stats['bytes']];
     }
 
     if (!is_dir(APP_ROOT . '/admin/logs/counts/')) {

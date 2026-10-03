@@ -358,148 +358,63 @@ function getExtensions()
 }
 
 /**
+ * 单次遍历统计目录：文件数、子目录数(不含自身)、文件总字节数
+ * 优先用 GNU find 一次遍历(NFS 友好)，shell 不可用时回退 PHP 迭代器
+ * @param string $path 目录
+ * @return array ['files' => int, 'dirs' => int, 'bytes' => int]
+ */
+function dir_stats($path)
+{
+    static $canUseShell = null;
+    if ($canUseShell === null) {
+        $canUseShell = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
+    }
+
+    $res = ['files' => 0, 'dirs' => 0, 'bytes' => 0];
+    $path = realpath($path);
+    if ($path === false || !is_dir($path)) return $res;
+
+    if ($canUseShell) {
+        $out = shell_exec('find ' . escapeshellarg($path) . " -printf '%y %s\\n' 2>/dev/null | awk '{c[\$1]++; if (\$1==\"f\") s+=\$2} END {printf \"%d %d %.0f\", c[\"f\"], c[\"d\"], s}'");
+        if ($out && preg_match('/^(\d+) (\d+) (\d+)$/', trim($out), $m) && $m[2] > 0) {
+            return ['files' => (int)$m[1], 'dirs' => (int)$m[2] - 1, 'bytes' => (int)$m[3]];
+        }
+    }
+
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+        RecursiveIteratorIterator::CATCH_GET_CHILD
+    );
+    foreach ($it as $item) {
+        if ($item->isDir()) {
+            $res['dirs']++;
+        } else {
+            $res['files']++;
+            $res['bytes'] += $item->getSize();
+        }
+    }
+    return $res;
+}
+
+/**
  * 获取目录大小 如果目录文件较多将很费时
  * @param $path string 路径
  * @return int
  */
 function getDirectorySize($path)
 {
-    clearstatcache(true, $path);
-    $path = realpath($path);
-    if ($path === false || $path == '' || !file_exists($path)) {
-        return 0;
-    }
-    
-    // 优先使用系统命令（NFS 友好，性能更好）
-    // 检查 shell_exec 是否可用（与 stat_async.php 保持一致）
-    $canUseShell = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
-    
-    if ($canUseShell && !defined('DISABLE_SHELL_COMMANDS')) {
-        $escapedPath = escapeshellarg($path);
-        $result = @shell_exec("du -sb {$escapedPath} 2>/dev/null");
-        if ($result !== null && preg_match('/^(\d+)/', $result, $matches)) {
-            return (int)$matches[1];
-        }
-    }
-    
-    // 回退到 PHP 递归方法（添加超时保护）
-    $bytestotal = 0;
-    $startTime = time();
-    $timeout = 30; // 30秒超时
-    
-    if (is_readable($path)) {
-        try {
-            foreach (new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::LEAVES_ONLY,
-                RecursiveIteratorIterator::CATCH_GET_CHILD
-            ) as $object) {
-                // 超时检查
-                if ((time() - $startTime) > $timeout) {
-                    break;
-                }
-                $bytestotal += $object->getSize();
-            }
-        } catch (Exception $e) {
-            // 忽略权限错误
-        }
-    }
-    return $bytestotal;
+    return dir_stats($path)['bytes'];
 }
 
 /**
- * 获取指定文件夹文件数量
- * @param $dir 传入一个路径如：/apps/web
- * @return int 返回文件数量
+ * 递归获取目录文件数量
+ * @param $dir string 目录
+ * @return int
  */
 function getFileNumber($dir)
 {
-    clearstatcache(true);
-    
-    // 处理 glob 模式路径，提取基础目录
-    $baseDir = rtrim($dir, '/*');
-    $realDir = realpath($baseDir);
-    
-    if ($realDir === false || !is_dir($realDir)) {
-        return 0;
-    }
-    
-    // 优先使用系统命令（NFS 友好，性能更好）
-    // 检查 shell_exec 是否可用（与 stat_async.php 保持一致）
-    $canUseShell = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
-    
-    if ($canUseShell && !defined('DISABLE_SHELL_COMMANDS')) {
-        $escapedPath = escapeshellarg($realDir);
-        $result = @shell_exec("find {$escapedPath} -type f 2>/dev/null | wc -l");
-        if ($result !== null) {
-            $count = (int)trim($result);
-            if ($count >= 0) {
-                return $count;
-            }
-        }
-    }
-    
-    // 回退到原递归方法（添加超时保护）
-    static $startTime = null;
-    static $timeout = 30;
-    
-    if ($startTime === null) {
-        $startTime = time();
-    }
-    
-    $num = 0;
-    $arr = @glob($dir);
-    if ($arr === false) {
-        return 0;
-    }
-    foreach ($arr as $v) {
-        // 超时检查
-        if ((time() - $startTime) > $timeout) {
-            break;
-        }
-        if (@is_file($v)) {
-            $num++;
-        } elseif (@is_readable($v)) {
-            $num += getFileNumber($v . "/*");
-        }
-    }
-    return $num;
-}
-
-/**
- * 图片展示页面
- * getDir()取文件夹列表，getFile()取对应文件夹下面的文件列表,二者的区别在于判断有没有“.”后缀的文件，其他都一样
- * 获取文件目录列表,该方法返回数组
- * @param $dir string 路径
- * @return mixed
- * @example getDir("./dir")
- */
-function getDirList($dir)
-{
-    $dirArray = array();
-    clearstatcache(true, $dir);
-    
-    // 检查目录是否存在且可读
-    if (!is_dir($dir) || !is_readable($dir)) {
-        return $dirArray;
-    }
-    
-    $handle = @opendir($dir);
-    if ($handle === false) {
-        return $dirArray;
-    }
-    
-    $i = 0;
-    while (false !== ($file = readdir($handle))) {
-        //去掉""."、".."以及带".xxx"后缀的文件
-        if ($file != "." && $file != ".." && !strpos($file, ".")) {
-            $dirArray[$i] = $file;
-            $i++;
-        }
-    }
-    //关闭句柄
-    closedir($handle);
-    return $dirArray;
+    return dir_stats(rtrim($dir, '/*'))['files'];
 }
 
 /**
@@ -510,18 +425,11 @@ function getDirList($dir)
 function getFile($dir)
 {
     $fileArray = array();
-    clearstatcache(true, $dir);
-    
-    // 检查目录是否存在且可读
-    if (!is_dir($dir) || !is_readable($dir)) {
-        return $fileArray;
-    }
-    
     $handle = @opendir($dir);
     if ($handle === false) {
         return $fileArray;
     }
-    
+
     $i = 0;
     while (false !== ($file = readdir($handle))) {
         // 去掉"."、".."以及带".xxx"后缀的文件
@@ -533,7 +441,6 @@ function getFile($dir)
             $i++;
         }
     }
-    // 关闭句柄
     closedir($handle);
     return $fileArray;
 }
@@ -550,119 +457,26 @@ function getFile($dir)
 function get_file_by_glob($dir_fileName_suffix, $type = 'list')
 {
     global $config;
-    static $cache = null;
-    static $cacheType = null;
-    
-    // 获取缓存类型配置: 0=关闭, 1=文件缓存, 2=Redis缓存
-    $cacheMode = isset($config['plaza_cache_type']) ? (int)$config['plaza_cache_type'] : 2;
-    
-    // 初始化缓存
-    if ($cache === null) {
-        if ($cacheMode === 0) {
-            // 关闭缓存
-            $cache = false;
-            $cacheType = 'none';
-        } elseif ($cacheMode === 1) {
-            // 强制使用文件缓存
-            try {
-                require_once __DIR__ . '/file_cache.php';
-                $cache = new FileCache();
-                $cacheType = 'file';
-            } catch (Exception $e) {
-                $cache = false;
-                $cacheType = 'none';
-            }
-        } else {
-            // Redis 缓存（失败降级到文件缓存）
-            try {
-                require_once __DIR__ . '/redis_cache.php';
-                $cache = new RedisCache(
-                    $config['redis_host'] ?? '127.0.0.1',
-                    $config['redis_port'] ?? 6379,
-                    $config['redis_password'] ?? null
-                );
-                $cacheType = 'redis';
-            } catch (Exception $e) {
-                // Redis 不可用,降级到文件缓存
-                try {
-                    require_once __DIR__ . '/file_cache.php';
-                    $cache = new FileCache();
-                    $cacheType = 'file';
-                } catch (Exception $e2) {
-                    // 缓存完全不可用,使用原始方法
-                    $cache = false;
-                    $cacheType = 'none';
-                }
-            }
-        }
-    }
-    
-    // 使用缓存
-    if ($cache !== false) {
-        if ($type == 'list') {
-            // 解析路径和模式
-            $pathInfo = pathinfo($dir_fileName_suffix);
-            $dir = $pathInfo['dirname'];
-            $pattern = $pathInfo['basename'];
-            
-            // 使用缓存获取文件列表
-            $files = $cache->getFileList($dir, $pattern);
-            
-            // 排序
-            if ($files && isset($config['showSort'])) {
-                switch ($config['showSort']) {
-                    case 1:
-                        $files = array_reverse($files);
-                        break;
-                }
-            }
-            
-            return $files ?: [];
-        }
 
-        if ($type == 'number') {
-            // 解析 glob 路径,提取目录部分
-            // 例如: /path/to/i/2026/01/10/*.* -> /path/to/i/2026/01/10/
-            $pathInfo = pathinfo($dir_fileName_suffix);
-            $dir = $pathInfo['dirname'];
-            $pattern = $pathInfo['basename'];
-            
-            // 如果是 glob 模式(包含 * 或 ?),使用目录路径
-            if (strpos($pattern, '*') !== false || strpos($pattern, '?') !== false) {
-                // 使用缓存获取目录下的文件数量(非递归,只统计当前目录)
-                return $cache->getFileCount($dir, false);
-            } else {
-                // 纯目录路径,递归统计
-                return $cache->getFileCount($dir_fileName_suffix, true);
-            }
-        }
-    }
-    
-    // 缓存不可用时的降级处理(原始实现)
+    // 获取所有文件
     if ($type == 'list') {
+        $res = array();
         $glob = glob($dir_fileName_suffix, GLOB_BRACE);
-        $res = [];
 
         if ($glob) {
             foreach ($glob as $v) {
                 if (is_file($v)) $res[] = basename($v);
             }
             // 排序
-            if ($res && isset($config['showSort'])) {
-                switch ($config['showSort']) {
-                    case 1:
-                        $res = array_reverse($res);
-                        break;
-                }
+            if ($res && $config['showSort'] == 1) {
+                $res = array_reverse($res);
             }
         }
-        
-        return $res;
     }
 
     if ($type == 'number') {
         $res = 0;
-        $glob = glob($dir_fileName_suffix);
+        $glob = glob($dir_fileName_suffix); //把该路径下所有的文件存到一个数组里面;
         if ($glob) {
             foreach ($glob as $v) {
                 if (is_file($v)) {
@@ -672,50 +486,8 @@ function get_file_by_glob($dir_fileName_suffix, $type = 'list')
                 }
             }
         }
-        return $res;
     }
-    
-    return [];
-}
-
-/**
- * 递归函数实现遍历指定文件下的目录与文件数量
- * 用来统计一个目录下的文件和目录的个数
- * echo "目录数为:{$dirn}<br>";
- * echo "文件数为:{$filen}<br>";
- * @param $file string 目录
- */
-function getdirnum($file)
-{
-    $dirn = 0; //目录数
-    $filen = 0; //文件数
-    
-    clearstatcache(true, $file);
-    
-    // 检查目录是否存在且可读
-    if (!is_dir($file) || !is_readable($file)) {
-        return;
-    }
-    
-    $dir = @opendir($file);
-    if ($dir === false) {
-        return;
-    }
-    
-    while (($filename = readdir($dir)) !== false) {
-        if ($filename != "." && $filename != "..") {
-            $fullpath = $file . "/" . $filename;
-            clearstatcache(true, $fullpath);
-            if (is_dir($fullpath)) {
-                $dirn++;
-                getdirnum($fullpath);
-                //递归，就可以查看所有子目录
-            } else {
-                $filen++;
-            }
-        }
-    }
-    closedir($dir);
+    return $res;
 }
 
 /**

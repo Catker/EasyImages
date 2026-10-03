@@ -21,18 +21,17 @@ if ($config['ad_top']) echo $config['ad_top_info'];
       // ========== 分页配置 ==========
       $perPage = isset($config['plaza_per_page']) ? $config['plaza_per_page'] : 30; // 每页显示数量
       $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;                 // 当前页码
-      
+
       // ========== 日期处理 ==========
       $listDate = $config['listDate'];                                                // 配置限制日期
       $path =  date('Y/m/d/');                                                        // 默认当前日期
-      
+
       if (isset($_GET['date'])) {
         // 验证日期格式
         $requestDate = trim($_GET['date']);
         if (preg_match('/^\d{4}\/\d{2}\/\d{2}\/$/', $requestDate)) {
           $path = $requestDate;
         } else {
-          $path = date('Y/m/d/');
           echo '
           <script>
             new $.zui.Messager("日期格式不正确, 返回今日上传列表", {
@@ -42,40 +41,48 @@ if ($config['ad_top']) echo $config['ad_top_info'];
           </script>';
         }
       }
+      $relDir = $config['path'] . $path;                                              // 相对目录
+
+      // ========== 获取文件列表 ==========
+      $plaza = PlazaCache::instance();
+      $allFiles = $plaza->files(APP_ROOT . $relDir);
+      $allUploud = count($allFiles);                                                  // 当前日期统计
+      $todayUpload = $path == date('Y/m/d/') ? $allUploud : count($plaza->files(APP_ROOT . $config['path'] . date('Y/m/d/')));
+      $yestUpload = count($plaza->files(APP_ROOT . $config['path'] . date('Y/m/d/', strtotime('-1 day'))));
 
       // ========== 文件类型筛选 ==========
-      $fileType = isset($_GET['search']) ? '*.' . preg_replace("/[\W]/", "", $_GET['search'])  : '*.*';
-      
-      // ========== 获取文件列表 ==========
-      $allFiles = get_file_by_glob(APP_ROOT . config_path($path) .  $fileType, 'list');
+      $search = isset($_GET['search']) ? strtolower(preg_replace('/\W/', '', $_GET['search'])) : '';
+      if ($search !== '') {
+        $allFiles = array_values(array_filter($allFiles, function ($f) use ($search) {
+          return strtolower(pathinfo($f, PATHINFO_EXTENSION)) === $search;
+        }));
+      }
+      if ($config['showSort'] == 1) $allFiles = array_reverse($allFiles);
       $totalFiles = count($allFiles);
-      
+
       // ========== 分页计算 ==========
       $totalPages = $totalFiles > 0 ? ceil($totalFiles / $perPage) : 1;
       $page = min($page, $totalPages); // 确保页码不超过总页数
       $offset = ($page - 1) * $perPage;
-      
+
       // ========== 分页切片 ==========
       $fileArr = array_slice($allFiles, $offset, $perPage);
-      
-      // ========== 当前日期统计 ==========
-      $currentDatePath = isset($_GET['date']) ? $_GET['date'] : date('Y/m/d/');
-      $allUploud = get_file_by_glob(APP_ROOT . $config['path'] . $currentDatePath . '*.*', 'number');
-      
+
       // ========== URL 参数 ==========
       $httpUrl = array('date' => $path, 'page' => $page);
+      $pageQuery = $search === '' ? array('date' => $path) : array('date' => $path, 'search' => $search);
 
       // 隐藏path目录获取图片复制与原图地址
       if ($config['hide_path']) {
-        $config_path = str_replace($config['path'], '/', config_path($path));
+        $config_path = str_replace($config['path'], '/', $relDir);
       } else {
-        $config_path = config_path($path);
+        $config_path = $relDir;
       }
 
       if (empty($fileArr)) : ?>
         <div class="alert alert-info">
           <?php if ($page > 1): ?>
-            当前页没有图片,请返回 <a href="?date=<?php echo $path; ?>&page=1">第一页</a>
+            当前页没有图片,请返回 <a href="?<?php echo http_build_query($pageQuery + array('page' => 1)); ?>">第一页</a>
           <?php else: ?>
             <?php echo $path == date('Y/m/d/') ? '今天还没有上传的图片哟~~ <br />快来上传第一张吧~!' : '该日期没有上传的图片'; ?>
           <?php endif; ?>
@@ -84,7 +91,7 @@ if ($config['ad_top']) echo $config['ad_top_info'];
         <ul id="viewjs">
           <div class="cards listNum">
             <?php foreach ($fileArr as $key => $value) {
-                $relative_path = config_path($path) . $value;     // 相对路径
+                $relative_path = $relDir . $value;                // 相对路径
                 $imgUrl = $config['domain'] . $relative_path;     // 图片地址
                 $linkUrl = rand_imgurl() . $config_path . $value; // 图片复制与原图地址
             ?>
@@ -130,7 +137,7 @@ if ($config['ad_top']) echo $config['ad_top_info'];
   <div class="col-md-12" style="text-align: center; margin: 30px 0;">
     <div class="pager">
       <?php if ($page > 1): ?>
-        <a href="?date=<?php echo $path; ?>&page=<?php echo $page - 1; ?><?php echo isset($_GET['search']) ? '&search=' . $_GET['search'] : ''; ?>" class="btn btn-primary" style="margin: 0 5px;">
+        <a href="?<?php echo http_build_query($pageQuery + array('page' => $page - 1)); ?>" class="btn btn-primary" style="margin: 0 5px;">
           <i class="icon icon-chevron-left"></i> 上一页
         </a>
       <?php else: ?>
@@ -145,7 +152,7 @@ if ($config['ad_top']) echo $config['ad_top_info'];
       </span>
       
       <?php if ($page < $totalPages): ?>
-        <a href="?date=<?php echo $path; ?>&page=<?php echo $page + 1; ?><?php echo isset($_GET['search']) ? '&search=' . $_GET['search'] : ''; ?>" class="btn btn-primary" style="margin: 0 5px;">
+        <a href="?<?php echo http_build_query($pageQuery + array('page' => $page + 1)); ?>" class="btn btn-primary" style="margin: 0 5px;">
           下一页 <i class="icon icon-chevron-right"></i>
         </a>
       <?php else: ?>
@@ -163,25 +170,17 @@ if ($config['ad_top']) echo $config['ad_top_info'];
       <div class="btn-toolbar">
         <div class="btn-group">
           <a class="btn btn-danger btn-mini" href="?<?php echo http_build_query($httpUrl); ?>">当前<?php echo $allUploud; ?></a>
-          <a class="btn btn-primary btn-mini" href="list.php">今日<?php echo get_file_by_glob(APP_ROOT . config_path() . '*.*', 'number'); ?></a>
-          <a class="btn btn-mini" href="?date=<?php echo date("Y/m/d/", strtotime("-1 day")) ?>">昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")) . '*.*', 'number'); ?></a>
+          <a class="btn btn-primary btn-mini" href="list.php">今日<?php echo $todayUpload; ?></a>
+          <a class="btn btn-mini" href="?date=<?php echo date("Y/m/d/", strtotime("-1 day")) ?>">昨日<?php echo $yestUpload; ?></a>
           <?php
           // ========== 智能日期显示: 只显示有图片的日期 ==========
           $datesWithImages = [];
           
-          // 优化: 先检查目录是否存在,避免对不存在的目录进行缓存查询
           for ($x = 2; $x <= $listDate - 1; $x++) {
             $checkDate = date('Y/m/d/', strtotime("-$x day"));
-            $checkPath = APP_ROOT . $config['path'] . $checkDate;
-            
-            // 先用 is_dir 快速检查目录是否存在(本地文件系统调用,比 Redis 往返快)
-            if (!is_dir($checkPath)) {
-              continue; // 目录不存在,跳过
-            }
-            
-            // 目录存在,再查询文件数量(会使用缓存)
-            $count = get_file_by_glob($checkPath . '*.*', 'number');
-            
+            // 目录不存在时 files() 直接返回空数组
+            $count = count($plaza->files(APP_ROOT . $config['path'] . $checkDate));
+
             if ($count > 0) {
               $datesWithImages[] = [
                 'date' => $checkDate,
@@ -513,7 +512,7 @@ if ($config['ad_top']) echo $config['ad_top_info'];
     });
 
     // 更改网页标题
-    document.title = "图床广场 - 今日上传<?php echo get_file_by_glob(APP_ROOT . config_path() . '*.*', 'number'); ?>张 昨日<?php echo get_file_by_glob(APP_ROOT . $config['path'] . date("Y/m/d/", strtotime("-1 day")) . '*.*', 'number'); ?>张 - <?php echo $config['title']; ?>"
+    document.title = "图床广场 - 今日上传<?php echo $todayUpload; ?>张 昨日<?php echo $yestUpload; ?>张 - <?php echo $config['title']; ?>"
   </script>
   <?php
   /** 引入底部 */

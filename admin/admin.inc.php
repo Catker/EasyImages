@@ -1110,7 +1110,6 @@ auto_delete(); //定时删除
                         <div class="form-group">
                             <label>缓存工具</label><br/>
                             <a class="btn btn-mini btn-info" href="/app/cache_status.php" target="_blank" data-toggle="tooltip" title="查看缓存状态和诊断信息"><i class="icon icon-dashboard"></i> 缓存状态</a>
-                            <br/><small class="text-muted" data-toggle="tooltip" title="缓存预热需通过命令行执行"><i class="icon icon-terminal"></i> 预热命令: <code style="white-space:nowrap;">php cache_warmup.php</code></small>
                         </div>
                     </div>
                     <div class="col-md-3">

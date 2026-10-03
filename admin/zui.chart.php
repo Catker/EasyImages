@@ -15,7 +15,7 @@ if (!is_who_login('admin')) {
 }
 // 删除统计文件
 if (isset($_POST['del_total'])) {
-    @deldir($_POST['del_total']);
+    @deldir(APP_ROOT . '/admin/logs/counts/'); // 固定路径，不信任客户端传入
     echo '
 		<script>
 		new $.zui.Messager("重新统计成功!", {
@@ -62,7 +62,7 @@ if (is_array($char_data)) {
         <div class="alert alert-warning">
             <form action="chart.php" method="post">
                 <span>统计时间:<?php echo $char_data['total_time']; ?></span>
-                <input type="hidden" name="del_total" value="<?php echo APP_ROOT . '/admin/logs/counts/'; ?>">
+                <input type="hidden" name="del_total" value="1">
                 <button class="btn btn-mini btn-primary"><i class="icon icon-spin icon-refresh"></i>重新统计</button>
             </form>
         </div>

@@ -152,6 +152,23 @@ mustLogin();
       'width': 80,
       'height': 80
     },
+    // 修复 webp 格式无法预览的问题
+    onFilesAdded: function(files) {
+      var uploader = this;
+      files.forEach(function(file) {
+        // 对 webp/gif 格式使用 FileReader 直接读取，避免 moxie.Image 不支持的问题
+        if (file.type && /image\/(webp|gif)/.test(file.type) && file.getSource) {
+          var reader = new moxie.file.FileReader();
+          reader.onload = function() {
+            file.previewImage = reader.result;
+            uploader.showFile(file);
+            reader.destroy();
+            reader = null;
+          };
+          reader.readAsDataURL(file.getSource());
+        }
+      });
+    },
     // 上传格式过滤
     filters: { // 只允许上传图片或图标（.ico）
       mime_types: [{
